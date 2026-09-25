@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="_base.css">
+<style>
+  h1 { border-bottom: 1.5pt solid #111; padding-bottom: 4pt; }
+  .party td { padding: 3pt 6pt 3pt 0; vertical-align: top; }
+</style>
+</head>
+<body>
+<h1>Акт № {{ act.number }} от {{ act.act_date | date_ru }}</h1>
+<table class="party">
+  <tr><td class="nowrap">Исполнитель:</td>
+    <td><b>{{ profile.full_name or profile.name }}, ИНН {{ profile.inn }}{% if profile.kpp %}, КПП {{ profile.kpp }}{% endif %}, {{ profile.address }}</b></td></tr>
+  <tr><td class="nowrap">Заказчик:</td>
+    <td><b>{% if act.company %}{{ act.company.full_name or act.company.name }}{% if act.company.inn %}, ИНН {{ act.company.inn }}{% endif %}{% if act.company.kpp %}, КПП {{ act.company.kpp }}{% endif %}{% if act.company.legal_address %}, {{ act.company.legal_address }}{% endif %}{% endif %}</b></td></tr>
+  <tr><td>Основание:</td><td>{% if act.invoice %}Счёт № {{ act.invoice.number }} от {{ act.invoice.issued_at | dmy }}{% else %}Основной договор{% endif %}</td></tr>
+</table>
+
+<table class="grid" style="margin-top:8pt">
+  <thead><tr><th style="width:5%">№</th><th>Наименование работ, услуг</th><th style="width:9%">Кол-во</th><th style="width:7%">Ед.</th><th style="width:15%">Цена</th><th style="width:16%">Сумма</th></tr></thead>
+  <tbody>
+  {% for l in lines %}
+    <tr><td class="center">{{ l.n }}</td><td>{{ l.name }}</td><td class="num">{{ l.quantity | num }}</td><td class="center">{{ l.unit }}</td>
+      <td class="num">{{ (l.price * (1 - l.discount_percent / 100)) | money("") }}</td><td class="num">{{ l.total | money("") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<table class="totals" style="width:auto; margin-left:auto; margin-top:4pt">
+  <tr><td>Итого:</td><td class="num">{{ total | money("") }}</td></tr>
+  <tr><td>{% if act.vat_rate %}В том числе НДС ({{ act.vat_rate }}%):{% else %}Без налога (НДС):{% endif %}</td><td class="num">{% if act.vat_rate %}{{ vat | money("") }}{% else %}—{% endif %}</td></tr>
+</table>
+<p>Всего оказано услуг {{ lines | length }}, на сумму {{ total | money("RUB") }}<br><b>{{ words }}</b></p>
+<p>Вышеперечисленные услуги выполнены полностью и в срок. Заказчик претензий по объёму, качеству и срокам оказания услуг не имеет.</p>
+
+<table class="sign" style="border-top:1.5pt solid #111">
+  <tr>
+    <td style="width:50%"><b>ИСПОЛНИТЕЛЬ</b><br>{{ profile.full_name or profile.name }}<br><br><span class="line"></span> {{ profile.director }}<br><span class="small muted">М.П.</span></td>
+    <td><b>ЗАКАЗЧИК</b><br>{% if act.company %}{{ act.company.full_name or act.company.name }}{% endif %}<br><br><span class="line"></span><br><span class="small muted">М.П.</span></td>
+  </tr>
+</table>
+</body>
+</html>

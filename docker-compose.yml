@@ -1,0 +1,113 @@
+name: b2b-crm
+
+x-backend: &backend
+  build:
+    context: ./backend
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-crm}@db:5432/${POSTGRES_DB:-crm}
+    REDIS_URL: redis://redis:6379/0
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    minio:
+      condition: service_started
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-crm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crm}
+      POSTGRES_DB: ${POSTGRES_DB:-crm}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crm}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "127.0.0.1:9001:9001"
+    restart: unless-stopped
+
+  # Тестовый почтовый сервер: все письма CRM видны в веб-интерфейсе http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports:
+      - "127.0.0.1:8025:8025"
+    restart: unless-stopped
+
+  # API доступен только через nginx (порт наружу не публикуется)
+  backend:
+    <<: *backend
+
+  worker:
+    <<: *backend
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--concurrency=4"]
+    healthcheck:
+      disable: true
+
+  beat:
+    <<: *backend
+    command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
+    healthcheck:
+      disable: true
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Ежедневное резервное копирование БД с хранением архивов 30 дней
+  backup:
+    image: postgres:16-alpine
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-crm}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-crm}
+      PGDATABASE: ${POSTGRES_DB:-crm}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+    volumes:
+      - ./backups:/backups
+      - ./scripts/backup-loop.sh:/backup-loop.sh:ro
+    entrypoint: ["sh", "/backup-loop.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

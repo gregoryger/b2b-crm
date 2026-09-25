@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="_base.css">
+<style>
+  .bank td { border: 0.6pt solid #111; padding: 2pt 4pt; }
+  .party td { padding: 3pt 6pt 3pt 0; vertical-align: top; }
+  h1 { border-bottom: 1.5pt solid #111; padding-bottom: 4pt; margin-top: 14pt; }
+</style>
+</head>
+<body>
+{% if profile.logo %}<img src="{{ profile.logo }}" style="max-height:36pt; margin-bottom:8pt" alt="logo">{% endif %}
+<table class="bank">
+  <tr>
+    <td colspan="2" rowspan="2" style="width:58%">{{ profile.bank_name or "Банк получателя" }}<br><span class="small">Банк получателя</span></td>
+    <td style="width:10%">БИК</td><td>{{ profile.bik }}</td>
+  </tr>
+  <tr><td>Сч. №</td><td>{{ profile.corr_account }}</td></tr>
+  <tr>
+    <td>ИНН {{ profile.inn }}</td><td>КПП {{ profile.kpp }}</td>
+    <td rowspan="2">Сч. №</td><td rowspan="2">{{ profile.account }}</td>
+  </tr>
+  <tr><td colspan="2">{{ profile.full_name or profile.name }}<br><span class="small">Получатель</span></td></tr>
+</table>
+
+<h1>Счёт на оплату № {{ inv.number }} от {{ inv.issued_at | date_ru }}</h1>
+
+<table class="party">
+  <tr><td class="nowrap">Поставщик<br>(Исполнитель):</td>
+    <td><b>{{ profile.full_name or profile.name }}, ИНН {{ profile.inn }}{% if profile.kpp %}, КПП {{ profile.kpp }}{% endif %}, {{ profile.address }}{% if profile.phone %}, тел.: {{ profile.phone }}{% endif %}</b></td></tr>
+  <tr><td class="nowrap">Покупатель<br>(Заказчик):</td>
+    <td><b>{% if inv.company %}{{ inv.company.full_name or inv.company.name }}{% if inv.company.inn %}, ИНН {{ inv.company.inn }}{% endif %}{% if inv.company.kpp %}, КПП {{ inv.company.kpp }}{% endif %}{% if inv.company.legal_address %}, {{ inv.company.legal_address }}{% endif %}{% endif %}</b></td></tr>
+  <tr><td>Основание:</td><td>{% if inv.deal %}{{ inv.deal.title }}{% else %}Основной договор{% endif %}</td></tr>
+</table>
+
+<table class="grid" style="margin-top:8pt">
+  <thead><tr><th style="width:5%">№</th><th>Товары (работы, услуги)</th><th style="width:9%">Кол-во</th><th style="width:7%">Ед.</th><th style="width:15%">Цена</th><th style="width:16%">Сумма</th></tr></thead>
+  <tbody>
+  {% for l in lines %}
+    <tr><td class="center">{{ l.n }}</td><td>{{ l.name }}</td><td class="num">{{ l.quantity | num }}</td><td class="center">{{ l.unit }}</td>
+      <td class="num">{{ (l.price * (1 - l.discount_percent / 100)) | money("") }}</td><td class="num">{{ l.total | money("") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<table class="totals" style="width:auto; margin-left:auto; margin-top:4pt">
+  <tr><td>Итого:</td><td class="num">{{ total | money("") }}</td></tr>
+  <tr><td>{% if inv.vat_rate %}В том числе НДС ({{ inv.vat_rate }}%):{% else %}Без налога (НДС):{% endif %}</td><td class="num">{% if inv.vat_rate %}{{ vat | money("") }}{% else %}—{% endif %}</td></tr>
+  <tr><td>Всего к оплате:</td><td class="num">{{ total | money("") }}</td></tr>
+</table>
+<p>Всего наименований {{ lines | length }}, на сумму {{ total | money(inv.currency) }}<br><b>{{ words }}</b></p>
+<p class="small muted">Оплатить не позднее {{ inv.due_date | dmy }}. Оплата данного счёта означает согласие с условиями поставки товара / оказания услуг.</p>
+
+<table class="sign" style="border-top:1.5pt solid #111">
+  <tr>
+    <td style="width:50%"><b>Руководитель</b> <span class="line"></span> {{ profile.director }}</td>
+    <td><b>Бухгалтер</b> <span class="line"></span> {{ profile.accountant }}</td>
+  </tr>
+</table>
+</body>
+</html>

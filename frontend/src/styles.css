@@ -1,0 +1,118 @@
+:root {
+  --crm-bg: var(--mantine-color-gray-0);
+}
+
+[data-mantine-color-scheme='dark'] {
+  --crm-bg: var(--mantine-color-dark-8);
+}
+
+body {
+  background: var(--crm-bg);
+}
+
+a {
+  color: inherit;
+}
+
+.link {
+  color: var(--mantine-color-blue-7);
+  text-decoration: none;
+  cursor: pointer;
+}
+.link:hover {
+  text-decoration: underline;
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+/* Канбан */
+.kanban {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  align-items: flex-start;
+  min-height: calc(100vh - 230px);
+}
+.kanban-col {
+  flex: 0 0 280px;
+  background: var(--mantine-color-gray-1);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 230px);
+}
+[data-mantine-color-scheme='dark'] .kanban-col {
+  background: var(--mantine-color-dark-6);
+}
+.kanban-col-body {
+  padding: 8px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 80px;
+  transition: background-color 120ms;
+  border-radius: 0 0 10px 10px;
+}
+.kanban-col-body.drag-over {
+  background: var(--mantine-color-blue-0);
+}
+[data-mantine-color-scheme='dark'] .kanban-col-body.drag-over {
+  background: var(--mantine-color-dark-5);
+}
+.kanban-card {
+  margin-bottom: 8px;
+  cursor: grab;
+  transition: box-shadow 120ms;
+}
+.kanban-card:hover {
+  box-shadow: var(--mantine-shadow-sm);
+}
+
+/* Лента активностей */
+.timeline-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Календарь */
+.fc {
+  --fc-border-color: var(--mantine-color-gray-3);
+  --fc-today-bg-color: var(--mantine-color-blue-0);
+  --fc-button-bg-color: var(--mantine-color-blue-6);
+  --fc-button-border-color: var(--mantine-color-blue-6);
+  --fc-button-active-bg-color: var(--mantine-color-blue-8);
+  --fc-button-active-border-color: var(--mantine-color-blue-8);
+  --fc-button-hover-bg-color: var(--mantine-color-blue-7);
+  --fc-button-hover-border-color: var(--mantine-color-blue-7);
+  font-size: 13px;
+}
+.fc .fc-toolbar-title {
+  font-size: 18px;
+  text-transform: capitalize;
+}
+.fc-event {
+  cursor: pointer;
+}
+
+.stat-diff-up {
+  color: var(--mantine-color-teal-7);
+}
+.stat-diff-down {
+  color: var(--mantine-color-red-7);
+}
+
+/* Подсветка элемента онбординга */
+.onboarding-highlight {
+  position: relative;
+  z-index: 301;
+  box-shadow: 0 0 0 4px var(--mantine-color-blue-4);
+  border-radius: 8px;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

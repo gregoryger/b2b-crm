@@ -1,0 +1,22 @@
+# Режим разработки: код бэкенда монтируется в контейнер и перезагружается при изменениях.
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# Фронтенд: после правок выполните cd frontend && npx vite build — nginx отдаёт свежую сборку из frontend/dist
+services:
+  backend:
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./backend:/app
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
+    environment:
+      PUBLIC_BASE_URL: http://localhost:8080
+  worker:
+    volumes:
+      - ./backend:/app
+  beat:
+    volumes:
+      - ./backend:/app
+  # Статика фронтенда из локальной сборки (cd frontend && npx vite build)
+  frontend:
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html:ro

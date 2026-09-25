@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="_base.css">
+<style>
+  .hero { border-bottom: 3pt solid {{ accent }}; padding-bottom: 10pt; margin-bottom: 14pt; display: flex; justify-content: space-between; align-items: flex-end; }
+  .hero img { max-height: 46pt; max-width: 180pt; }
+  .brand { font-size: 13pt; font-weight: bold; }
+  .doc-title { color: {{ accent }}; font-size: 20pt; font-weight: bold; margin: 0; }
+  .meta td { padding: 1pt 8pt 1pt 0; }
+  .meta td:first-child { white-space: nowrap; }
+  .grid th { background: {{ accent }}; color: #fff; border-color: {{ accent }}; }
+  .grid td { border-color: #ccc; }
+  .grand { font-size: 12pt; color: {{ accent }}; }
+  .block { margin: 10pt 0; white-space: pre-line; }
+  .card { background: #f8f9fa; border-left: 3pt solid {{ accent }}; padding: 8pt 10pt; margin-top: 12pt; }
+</style>
+</head>
+<body>
+<div class="hero">
+  <div>
+    {% if profile.logo %}<img src="{{ profile.logo }}" alt="logo">{% else %}<div class="brand">{{ profile.name }}</div>{% endif %}
+    <div class="small muted">{{ profile.address }}{% if profile.phone %} · {{ profile.phone }}{% endif %}{% if profile.website %} · {{ profile.website }}{% endif %}</div>
+  </div>
+  <div style="text-align:right">
+    <p class="doc-title">Коммерческое предложение</p>
+    <div class="muted">№ {{ p.number }} от {{ p.created_at | dmy }}</div>
+  </div>
+</div>
+
+<table class="meta">
+  <tr><td class="muted">Для:</td><td><b>{{ p.company.name if p.company else "—" }}</b>{% if p.contact %}, {{ p.contact.full_name }}{% if p.contact.position %} ({{ p.contact.position }}){% endif %}{% endif %}</td></tr>
+  <tr><td class="muted">Тема:</td><td>{{ p.title }}</td></tr>
+  {% if p.valid_until %}<tr><td class="muted">Действует до:</td><td>{{ p.valid_until | dmy }}</td></tr>{% endif %}
+</table>
+
+{% if intro %}<div class="block">{{ intro }}</div>{% endif %}
+
+<h2>Состав предложения</h2>
+<table class="grid">
+  <thead>
+    <tr>
+      <th style="width:5%">№</th><th>Наименование</th><th style="width:9%">Кол-во</th><th style="width:7%">Ед.</th>
+      <th style="width:14%">Цена</th>{% if has_discount %}<th style="width:8%">Скидка</th>{% endif %}<th style="width:15%">Сумма</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for l in lines %}
+    <tr>
+      <td class="center">{{ l.n }}</td>
+      <td>{{ l.name }}{% if l.description %}<div class="small muted">{{ l.description }}</div>{% endif %}</td>
+      <td class="num">{{ l.quantity | num }}</td>
+      <td class="center">{{ l.unit }}</td>
+      <td class="num">{{ l.price | money(p.currency) }}</td>
+      {% if has_discount %}<td class="num">{{ l.discount_percent | num }}%</td>{% endif %}
+      <td class="num">{{ l.total | money(p.currency) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<table class="totals" style="width:auto; margin-left:auto; margin-top:6pt">
+  <tr><td>Итого:</td><td class="num grand"><b>{{ total | money(p.currency) }}</b></td></tr>
+  {% if p.vat_rate %}<tr><td>в т.ч. НДС {{ p.vat_rate }}%:</td><td class="num">{{ vat | money(p.currency) }}</td></tr>
+  {% else %}<tr><td>НДС:</td><td class="num">не облагается</td></tr>{% endif %}
+</table>
+
+{% if terms %}<h2>Условия</h2><div class="block">{{ terms }}</div>{% endif %}
+
+<div class="card">
+  <b>Ваш менеджер:</b> {{ p.owner.full_name if p.owner else "" }}{% if p.owner and p.owner.position %}, {{ p.owner.position }}{% endif %}<br>
+  {% if p.owner and p.owner.phone %}Тел.: {{ p.owner.phone }} · {% endif %}{% if p.owner %}{{ p.owner.email }}{% endif %}
+</div>
+{% if footer %}<div class="block small muted">{{ footer }}</div>{% endif %}
+</body>
+</html>

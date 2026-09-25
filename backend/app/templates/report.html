@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="_base.css">
+<style>
+  @page { size: A4 landscape; }
+  .head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1.5pt solid #111; padding-bottom: 6pt; margin-bottom: 10pt; }
+  .grid td { border-color: #bbb; }
+  .grid th { border-color: #bbb; }
+  .total td { font-weight: bold; background: #f8f9fa; }
+</style>
+</head>
+<body>
+<div class="head">
+  <div>
+    <h1>{{ r.title }}</h1>
+    <div class="muted">{{ r.subtitle or "" }}</div>
+  </div>
+  <div class="small muted" style="text-align:right">{{ profile.name }}<br>Сформирован {{ now.strftime("%d.%m.%Y %H:%M") }}</div>
+</div>
+<table class="grid">
+  <thead><tr>{% for c in r.columns %}<th>{{ c.label }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for row in r.rows %}
+    <tr>
+    {% for c in r.columns %}
+      {% set v = row.get(c.key) %}
+      {% set t = row.get("type") if c.key == "value" and row.get("type") else c.type %}
+      {% if v is none %}<td class="center muted">—</td>
+      {% elif t == "money" %}<td class="num">{{ v | money("") }}</td>
+      {% elif t in ("int", "float") %}<td class="num">{{ v | num }}</td>
+      {% elif t == "pct" %}<td class="num">{{ v }}%</td>
+      {% else %}<td>{{ v }}</td>{% endif %}
+    {% endfor %}
+    </tr>
+  {% else %}
+    <tr><td colspan="{{ r.columns | length }}" class="center muted">Нет данных за выбранный период</td></tr>
+  {% endfor %}
+  {% if r.totals %}
+    <tr class="total">
+    {% for c in r.columns %}
+      {% set v = r.totals.get(c.key) %}
+      {% if v is none %}<td></td>
+      {% elif c.type == "money" %}<td class="num">{{ v | money("") }}</td>
+      {% elif c.type in ("int", "float") %}<td class="num">{{ v | num }}</td>
+      {% elif c.type == "pct" %}<td class="num">{{ v }}%</td>
+      {% else %}<td>{{ v }}</td>{% endif %}
+    {% endfor %}
+    </tr>
+  {% endif %}
+  </tbody>
+</table>
+{% if r.aging %}
+<h2>Структура задолженности по срокам</h2>
+<table class="grid" style="width:60%">
+  <tr><th>Не просрочено</th><th>1–30 дн.</th><th>31–60 дн.</th><th>61–90 дн.</th><th>Более 90 дн.</th></tr>
+  <tr>
+    <td class="num">{{ r.aging.current | money("") }}</td><td class="num">{{ r.aging["1_30"] | money("") }}</td>
+    <td class="num">{{ r.aging["31_60"] | money("") }}</td><td class="num">{{ r.aging["61_90"] | money("") }}</td>
+    <td class="num">{{ r.aging["90_plus"] | money("") }}</td>
+  </tr>
+</table>
+{% endif %}
+</body>
+</html>

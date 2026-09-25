@@ -1,0 +1,49 @@
+{
+  "name": "b2b-crm-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@fullcalendar/core": "6.1.15",
+    "@fullcalendar/daygrid": "6.1.15",
+    "@fullcalendar/interaction": "6.1.15",
+    "@fullcalendar/react": "6.1.15",
+    "@fullcalendar/timegrid": "6.1.15",
+    "@hello-pangea/dnd": "17.0.0",
+    "@mantine/charts": "7.17.2",
+    "@mantine/core": "7.17.2",
+    "@mantine/dates": "7.17.2",
+    "@mantine/dropzone": "7.17.2",
+    "@mantine/form": "7.17.2",
+    "@mantine/hooks": "7.17.2",
+    "@mantine/modals": "7.17.2",
+    "@mantine/notifications": "7.17.2",
+    "@mantine/spotlight": "7.17.2",
+    "@tabler/icons-react": "3.24.0",
+    "@tanstack/react-query": "5.62.8",
+    "axios": "1.7.9",
+    "dayjs": "1.11.13",
+    "qrcode.react": "4.2.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.28.0",
+    "recharts": "2.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "4.3.4",
+    "postcss": "8.4.49",
+    "postcss-preset-mantine": "1.17.0",
+    "postcss-simple-vars": "7.0.1",
+    "typescript": "5.6.3",
+    "vite": "5.4.11"
+  }
+}
