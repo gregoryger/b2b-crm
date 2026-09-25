@@ -59,6 +59,18 @@ def client(database):
         yield c
 
 
+@pytest.fixture(autouse=True)
+def isolated_rate_window(database):
+    """Лимиты проверяются внутри теста, а не зависят от скорости предыдущих тестов."""
+    from app.core.ratelimit import _memory
+
+    r = redis.Redis.from_url(os.environ["REDIS_URL"])
+    keys = list(r.scan_iter(match="rl:*"))
+    if keys:
+        r.delete(*keys)
+    _memory.clear()
+
+
 _tokens: dict[str, str] = {}
 
 

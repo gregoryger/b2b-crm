@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, defaultload, noload
 
 from app.api.deps import get_current_user, require
@@ -41,6 +41,13 @@ LIST_OPTIONS = (
 )
 
 
+def _stale_condition():
+    border = utcnow() - timedelta(days=14)
+    recent = select(Activity.deal_id).where(Activity.deal_id.is_not(None), Activity.occurred_at >= border)
+    planned = select(Task.deal_id).where(Task.deal_id.is_not(None), Task.status == "open")
+    return and_(Deal.status == "open", Deal.updated_at < border, Deal.id.not_in(recent), Deal.id.not_in(planned))
+
+
 def _filtered(
     user: User, q: str | None, stage_id: list[int], status: list[str], owner_id: int | None, company_id: int | None,
     close_from: date | None, close_to: date | None, amount_min: float | None, amount_max: float | None,
@@ -68,11 +75,7 @@ def _filtered(
     if amount_max is not None:
         stmt = stmt.where(Deal.amount <= amount_max)
     if stale:
-        border = utcnow() - timedelta(days=14)
-        recent = select(Activity.deal_id).where(Activity.deal_id.is_not(None), Activity.occurred_at >= border)
-        planned = select(Task.deal_id).where(Task.deal_id.is_not(None), Task.status == "open")
-        stmt = stmt.where(Deal.status == "open", Deal.updated_at < border, Deal.id.not_in(recent),
-                          Deal.id.not_in(planned))
+        stmt = stmt.where(_stale_condition())
     return stmt
 
 
@@ -108,15 +111,21 @@ def board(
     close_from: date | None = None,
     close_to: date | None = None,
     show_closed_days: int = Query(default=30, description="Показывать закрытые сделки за N дней"),
-    limit_per_stage: int = 100,
+    limit_per_stage: int = Query(default=30, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    stage_id: int | None = None,
     user: User = Depends(require("deals.view")),
     db: Session = Depends(get_db),
 ):
-    stages = db.scalars(select(PipelineStage).where(PipelineStage.is_active.is_(True))
-                        .order_by(PipelineStage.sort)).all()
+    stage_query = select(PipelineStage).where(PipelineStage.is_active.is_(True))
+    if stage_id:
+        stage_query = stage_query.where(PipelineStage.id == stage_id)
+    stages = db.scalars(stage_query.order_by(PipelineStage.sort)).all()
     rates = get_setting(db, "currencies") or {}
     base = _filtered(user, q, [], [], owner_id, company_id, close_from, close_to, None, None, False)
     base = base.where(or_(Deal.status == "open", Deal.closed_at >= utcnow() - timedelta(days=show_closed_days)))
+    if stage_id:
+        base = base.where(Deal.stage_id == stage_id)
 
     # Итоги по этапам — одним агрегирующим запросом
     totals: dict[int, dict] = {}
@@ -127,13 +136,20 @@ def board(
         t["count"] += cnt
         t["amount"] += float(amount) * float(rates.get(currency, 1))
 
-    # Карточки — одним запросом, затем раскладываем по колонкам
-    deals = db.scalars(base.options(*LIST_OPTIONS).order_by(Deal.stage_changed_at.desc())).unique().all()
+    # Ограничиваем каждую колонку на уровне БД, сохраняя общие итоги по всем сделкам.
+    ranked = base.with_only_columns(
+        Deal.id.label("deal_id"),
+        func.row_number().over(partition_by=Deal.stage_id, order_by=(Deal.stage_changed_at.desc(), Deal.id.desc()))
+        .label("position"),
+    ).order_by(None).subquery()
+    deals = db.scalars(select(Deal).join(ranked, ranked.c.deal_id == Deal.id)
+                       .where(ranked.c.position > offset, ranked.c.position <= offset + limit_per_stage)
+                       .options(*LIST_OPTIONS).order_by(Deal.stage_changed_at.desc(), Deal.id.desc())).unique().all()
+    stale_ids = set(db.scalars(select(Deal.id).where(Deal.id.in_([d.id for d in deals]), _stale_condition())))
     by_stage: dict[int, list] = {}
     for d in deals:
         bucket = by_stage.setdefault(d.stage_id, [])
-        if len(bucket) < limit_per_stage:
-            bucket.append(d)
+        bucket.append(d)
 
     columns = []
     for s in stages:
@@ -143,7 +159,8 @@ def board(
             "count": t["count"],
             "amount": round(t["amount"], 2),
             "weighted": round(t["amount"] * s.probability / 100, 2),
-            "deals": [DealOut.model_validate(d).model_dump(mode="json") for d in by_stage.get(s.id, [])],
+            "deals": [{**DealOut.model_validate(d).model_dump(mode="json"), "is_stale": d.id in stale_ids}
+                      for d in by_stage.get(s.id, [])],
         })
     return columns
 

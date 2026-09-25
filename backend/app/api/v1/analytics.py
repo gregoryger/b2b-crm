@@ -61,7 +61,7 @@ def dashboard(date_from: date | None = None, date_to: date | None = None, owner_
         "period": {"from": period.date_from, "to": period.date_to},
         "summary": summary,
         "previous": summary_prev,
-        "revenue_by_month": analytics.revenue_by_month(db, scope),
+        "revenue_by_month": analytics.revenue_by_month(db, scope, period),
         "forecast": analytics.forecast_by_month(db, scope),
         "funnel": funnel,
         "top_managers": managers,

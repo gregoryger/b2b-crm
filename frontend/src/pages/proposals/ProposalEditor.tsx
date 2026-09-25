@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useBeforeUnload, useBlocker, useNavigate, useParams } from 'react-router-dom';
 import {
   Alert,
   Anchor,
@@ -45,7 +45,7 @@ import { useApi } from '@/api/hooks';
 import type { DealLine, ProposalDetail } from '@/api/types';
 import LinesEditor from '@/components/LinesEditor';
 import { ContactSelect } from '@/components/selects';
-import { Empty, EntityLink, StatusBadge } from '@/components/ui';
+import { Empty, EntityLink, QueryFeedback, StatusBadge } from '@/components/ui';
 import { dateTime, toISODate } from '@/lib/format';
 import { CURRENCIES, PROPOSAL_STATUS } from '@/lib/labels';
 
@@ -74,18 +74,32 @@ export default function ProposalEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { data: p, isLoading } = useApi<ProposalDetail>(['proposal', Number(id)], `/proposals/${id}`);
+  const query = useApi<ProposalDetail>(['proposal', Number(id)], `/proposals/${id}`);
+  const { data: p, isLoading } = query;
   const [form, setForm] = useState<Partial<ProposalDetail>>({});
   const [lines, setLines] = useState<DealLine[]>([]);
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirtyState] = useState(false);
+  const dirtyRef = useRef(false);
+  const loadedId = useRef<number>();
+  const busyRef = useRef(false);
+  const setDirty = (value: boolean) => { dirtyRef.current = value; setDirtyState(value); };
   const [saving, setSaving] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const [sendTo, setSendTo] = useState('');
   const [sendMsg, setSendMsg] = useState('');
   const [sending, setSending] = useState(false);
+  const [acting, setActing] = useState(false);
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirtyRef.current && (
+    currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search
+  ));
+  useBeforeUnload(useCallback((event: BeforeUnloadEvent) => {
+    if (dirtyRef.current) { event.preventDefault(); event.returnValue = ''; }
+  }, []));
 
   useEffect(() => {
     if (p) {
+      if (dirtyRef.current && loadedId.current === p.id) return;
+      loadedId.current = p.id;
       setForm({ title: p.title, intro_text: p.intro_text, terms_text: p.terms_text, valid_until: p.valid_until,
         vat_rate: p.vat_rate, currency: p.currency, contact: p.contact });
       setLines(p.items.map((i) => ({ ...i })));
@@ -95,21 +109,24 @@ export default function ProposalEditor() {
   }, [p]);
 
   if (isLoading) return <Center h="50vh"><Loader /></Center>;
+  if (query.isError && !p) return <QueryFeedback query={query} />;
   if (!p) return <Empty text="КП не найдено или нет доступа" />;
   const locked = p.status === 'approved' || p.status === 'rejected';
+  const editingDisabled = locked || saving || acting || sending;
   const set = (patch: Partial<ProposalDetail>) => { setForm({ ...form, ...patch }); setDirty(true); };
   const refresh = () => ['proposal', 'proposals', 'activities'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
 
   const save = async (silent = false) => {
     setSaving(true);
     try {
-      await api.patch(`/proposals/${p.id}`, {
+      const { data: saved } = await api.patch<ProposalDetail>(`/proposals/${p.id}`, {
         title: form.title, intro_text: form.intro_text, terms_text: form.terms_text, valid_until: form.valid_until,
         vat_rate: form.vat_rate, currency: form.currency, contact_id: form.contact?.id ?? null,
         items: lines.filter((l) => l.name.trim()),
       });
       if (!silent) notifyOk('КП сохранено');
       setDirty(false);
+      qc.setQueryData(['proposal', p.id, undefined], saved);
       refresh();
       return true;
     } catch (e) {
@@ -120,10 +137,23 @@ export default function ProposalEditor() {
     }
   };
 
-  const preview = async () => {
-    if (dirty && !(await save(true))) return;
-    openPdf(`/proposals/${p.id}/pdf`);
+  const savedAction = async (action: () => Promise<unknown>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setActing(true);
+    try {
+      if (dirtyRef.current && !(await save(true))) return;
+      await action();
+    } catch (e) {
+      notifyError(e);
+    } finally {
+      busyRef.current = false;
+      setActing(false);
+    }
   };
+
+  const preview = () => savedAction(() => openPdf(`/proposals/${p.id}/pdf`));
+  const downloadPdf = () => savedAction(() => download(`/proposals/${p.id}/pdf`, { download: true }, `${p.number}.pdf`));
 
   const send = async () => {
     if (dirty && !(await save(true))) return;
@@ -140,39 +170,29 @@ export default function ProposalEditor() {
     }
   };
 
-  const setStatus = async (status: string) => {
-    try {
+  const setStatus = (status: string) => savedAction(async () => {
       await api.patch(`/proposals/${p.id}`, { status });
       refresh();
-    } catch (e) {
-      notifyError(e);
-    }
-  };
+  });
 
-  const duplicate = async () => {
-    try {
+  const duplicate = () => savedAction(async () => {
       const { data } = await api.post(`/proposals/${p.id}/duplicate`);
       navigate(`/proposals/${data.id}`);
-    } catch (e) {
-      notifyError(e);
-    }
-  };
+  });
 
-  const invoice = async () => {
-    try {
-      await api.post('/invoices', { proposal_id: p.id, deal_id: p.deal_id, company_id: p.company?.id });
+  const invoice = () => savedAction(async () => {
+      const { data } = await api.post('/invoices', { proposal_id: p.id });
+      ['invoices', 'invoices-summary', 'dashboard'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
       notifyOk('Счёт выставлен по КП');
-      navigate('/finance');
-    } catch (e) {
-      notifyError(e);
-    }
-  };
+      navigate(`/finance?invoice=${data.id}`);
+  });
 
   const remove = () => modals.openConfirmModal({
     title: 'Удалить черновик КП?', labels: { confirm: 'Удалить', cancel: 'Отмена' }, confirmProps: { color: 'red' },
     onConfirm: async () => {
       try {
         await api.delete(`/proposals/${p.id}`);
+        setDirty(false);
         navigate('/proposals');
       } catch (e) {
         notifyError(e);
@@ -182,6 +202,19 @@ export default function ProposalEditor() {
 
   return (
     <>
+      {query.isError && <QueryFeedback query={query} hasData />}
+      <Modal opened={blocker.state === 'blocked'} onClose={() => blocker.reset?.()} title="Сохранить изменения КП?" centered>
+        <Text size="sm" mb="md">В предложении есть несохранённые изменения.</Text>
+        <Stack gap="xs">
+          <Button loading={saving} disabled={acting || sending} onClick={async () => {
+            if (await save()) blocker.proceed?.();
+          }}>Сохранить и перейти</Button>
+          <Button variant="default" disabled={saving || acting || sending} onClick={() => {
+            setDirty(false); blocker.proceed?.();
+          }}>Уйти без сохранения</Button>
+          <Button variant="subtle" onClick={() => blocker.reset?.()}>Остаться</Button>
+        </Stack>
+      </Modal>
       <Anchor component={Link} to="/proposals" size="sm" c="dimmed">
         <Group gap={4}><IconArrowLeft size={14} /> Коммерческие предложения</Group>
       </Anchor>
@@ -197,13 +230,13 @@ export default function ProposalEditor() {
           </Text>
         </div>
         <Group gap="xs">
-          {dirty && <Button onClick={() => save()} loading={saving}>Сохранить</Button>}
-          <Button variant="default" leftSection={<IconEye size={16} />} onClick={preview}>PDF</Button>
-          {!locked && <Button leftSection={<IconSend size={16} />} onClick={() => setSendOpen(true)} disabled={!lines.length}>Отправить клиенту</Button>}
+          {dirty && <Button onClick={() => save()} loading={saving} disabled={acting || sending}>Сохранить</Button>}
+          <Button variant="default" leftSection={<IconEye size={16} />} onClick={preview} disabled={saving || acting || sending}>PDF</Button>
+          {!locked && <Button leftSection={<IconSend size={16} />} onClick={() => setSendOpen(true)} disabled={!lines.length || saving || acting || sending}>Отправить клиенту</Button>}
           <Menu position="bottom-end">
-            <Menu.Target><Button variant="default" px="xs" aria-label="Ещё"><IconDots size={18} /></Button></Menu.Target>
+            <Menu.Target><Button variant="default" px="xs" aria-label="Ещё" disabled={saving || acting || sending}><IconDots size={18} /></Button></Menu.Target>
             <Menu.Dropdown>
-              <Menu.Item leftSection={<IconDownload size={16} />} onClick={() => download(`/proposals/${p.id}/pdf`, { download: true }, `${p.number}.pdf`)}>Скачать PDF</Menu.Item>
+              <Menu.Item leftSection={<IconDownload size={16} />} onClick={downloadPdf}>Скачать PDF</Menu.Item>
               <Menu.Item leftSection={<IconCopy size={16} />} onClick={duplicate}>Новая версия КП</Menu.Item>
               {p.status !== 'draft' && !locked && (
                 <>
@@ -233,25 +266,25 @@ export default function ProposalEditor() {
           <Stack>
             <Card>
               <Stack>
-                <TextInput label="Заголовок" value={form.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} disabled={locked} />
+                <TextInput label="Заголовок" value={form.title ?? ''} onChange={(e) => set({ title: e.currentTarget.value })} disabled={editingDisabled} />
                 <SimpleGrid cols={{ base: 1, sm: 4 }}>
-                  <ContactSelect label="Контактное лицо" companyId={p.company?.id} value={form.contact?.id ?? null} disabled={locked}
+                  <ContactSelect label="Контактное лицо" companyId={p.company?.id} value={form.contact?.id ?? null} disabled={editingDisabled}
                     onChange={(v) => set({ contact: v ? { id: v, full_name: '' } : null })} />
-                  <DatePickerInput label="Действует до" valueFormat="DD.MM.YYYY" disabled={locked}
+                  <DatePickerInput label="Действует до" valueFormat="DD.MM.YYYY" disabled={editingDisabled}
                     value={form.valid_until ? new Date(form.valid_until) : null}
                     onChange={(d) => set({ valid_until: toISODate(d) ?? null })} />
-                  <Select label="НДС" disabled={locked} allowDeselect={false} value={String(form.vat_rate ?? 20)}
+                  <Select label="НДС" disabled={editingDisabled} allowDeselect={false} value={String(form.vat_rate ?? 20)}
                     data={[{ value: '20', label: '20%' }, { value: '10', label: '10%' }, { value: '0', label: 'Без НДС' }]}
                     onChange={(v) => set({ vat_rate: Number(v) })} />
-                  <Select label="Валюта" data={CURRENCIES} disabled={locked} allowDeselect={false} value={form.currency ?? 'RUB'}
+                  <Select label="Валюта" data={CURRENCIES} disabled={editingDisabled} allowDeselect={false} value={form.currency ?? 'RUB'}
                     onChange={(v) => set({ currency: v! })} />
                 </SimpleGrid>
                 <div>
                   <Group justify="space-between" mb={4}>
                     <Text size="sm" fw={500}>Вступительный текст</Text>
-                    {!locked && <VariablesHelp onInsert={(v) => set({ intro_text: `${form.intro_text ?? ''}${v}` })} />}
+                    {!editingDisabled && <VariablesHelp onInsert={(v) => set({ intro_text: `${form.intro_text ?? ''}${v}` })} />}
                   </Group>
-                  <Textarea autosize minRows={3} value={form.intro_text ?? ''} disabled={locked} aria-label="Вступительный текст"
+                  <Textarea autosize minRows={3} value={form.intro_text ?? ''} disabled={editingDisabled} aria-label="Вступительный текст"
                     onChange={(e) => set({ intro_text: e.currentTarget.value })} />
                 </div>
               </Stack>
@@ -259,14 +292,14 @@ export default function ProposalEditor() {
             <Card>
               <Title order={5} mb="sm">Товары и услуги</Title>
               <LinesEditor lines={lines} onChange={(l) => { setLines(l); setDirty(true); }} currency={form.currency}
-                vatRate={form.vat_rate} readOnly={locked} />
+                vatRate={form.vat_rate} readOnly={editingDisabled} />
             </Card>
             <Card>
               <Group justify="space-between" mb={4}>
                 <Text size="sm" fw={500}>Условия (оплата, поставка, гарантия)</Text>
-                {!locked && <VariablesHelp onInsert={(v) => set({ terms_text: `${form.terms_text ?? ''}${v}` })} />}
+                {!editingDisabled && <VariablesHelp onInsert={(v) => set({ terms_text: `${form.terms_text ?? ''}${v}` })} />}
               </Group>
-              <Textarea autosize minRows={4} value={form.terms_text ?? ''} disabled={locked} aria-label="Условия"
+              <Textarea autosize minRows={4} value={form.terms_text ?? ''} disabled={editingDisabled} aria-label="Условия"
                 onChange={(e) => set({ terms_text: e.currentTarget.value })} />
             </Card>
           </Stack>
@@ -318,7 +351,7 @@ export default function ProposalEditor() {
           </Text>
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setSendOpen(false)}>Отмена</Button>
-            <Button leftSection={<IconSend size={16} />} onClick={send} loading={sending} disabled={!sendTo}>Отправить</Button>
+            <Button leftSection={<IconSend size={16} />} onClick={send} loading={sending} disabled={!sendTo || saving || acting}>Отправить</Button>
           </Group>
         </Stack>
       </Modal>

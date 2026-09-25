@@ -211,6 +211,7 @@ export interface DealLine {
 }
 
 export interface Deal {
+  is_stale?: boolean;
   id: number;
   title: string;
   company: CompanyShort | null;
@@ -384,6 +385,7 @@ export interface Invoice {
 }
 
 export interface Act {
+  currency: string;
   id: number;
   number: string;
   invoice_id: number | null;

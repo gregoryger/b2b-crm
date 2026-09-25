@@ -153,6 +153,10 @@ class Act(TimestampMixin, Base):
     company: Mapped[Company | None] = relationship(lazy="joined")
     invoice: Mapped[Invoice | None] = relationship(lazy="joined")
 
+    @property
+    def currency(self) -> str:
+        return self.invoice.currency if self.invoice else "RUB"
+
 
 class ReportSchedule(Base):
     __tablename__ = "report_schedules"

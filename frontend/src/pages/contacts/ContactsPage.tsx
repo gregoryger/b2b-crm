@@ -1,3 +1,4 @@
+import { useListState } from '@/lib/useListState';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Group, MultiSelect, Paper, Table, Text, TextInput } from '@mantine/core';
@@ -14,11 +15,11 @@ import { CONTACT_ROLES } from '@/lib/labels';
 export default function ContactsPage() {
   const navigate = useNavigate();
   const { can } = useAuth();
-  const [q, setQ] = useState('');
+  const [q, setQ] = useListState('q', '');
   const [debounced] = useDebouncedValue(q, 300);
-  const [roles, setRoles] = useState<string[]>([]);
+  const [roles, setRoles] = useListState<string[]>('roles', []);
   const [sort, setSort] = useState('full_name');
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useListState('page', 1);
   const [pageSize, setPageSize] = useState(25);
   const [creating, setCreating] = useState(false);
   const { data, isLoading } = useApi<Page<Contact>>(['contacts'], '/contacts', {

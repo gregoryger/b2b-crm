@@ -1,3 +1,4 @@
+import { useListState } from '@/lib/useListState';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -21,7 +22,7 @@ import type { Company, Page } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { useQuickCreate } from '@/components/QuickCreate';
 import SortTh from '@/components/SortTh';
-import { Empty, PageHeader, Pager, StatusBadge } from '@/components/ui';
+import { Empty, PageHeader, Pager, QueryFeedback, StatusBadge } from '@/components/ui';
 import { ago, money } from '@/lib/format';
 import { COMPANY_STATUS } from '@/lib/labels';
 import ImportModal from './ImportModal';
@@ -32,17 +33,17 @@ export default function CompaniesPage() {
   const { can } = useAuth();
   const { open } = useQuickCreate();
   const qc = useQueryClient();
-  const [q, setQ] = useState('');
+  const [q, setQ] = useListState('q', '');
   const [debounced] = useDebouncedValue(q, 300);
-  const [industry, setIndustry] = useState<string[]>([]);
-  const [region, setRegion] = useState<string[]>([]);
-  const [status, setStatus] = useState<string[]>([]);
-  const [manager, setManager] = useState<string | null>(null);
-  const [revenueMin, setRevenueMin] = useState<number | string>('');
-  const [noContact, setNoContact] = useState<string | null>(null);
-  const [sort, setSort] = useState('-created_at');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [industry, setIndustry] = useListState<string[]>('industry', []);
+  const [region, setRegion] = useListState<string[]>('region', []);
+  const [status, setStatus] = useListState<string[]>('status', []);
+  const [manager, setManager] = useListState<string | null>('manager', null);
+  const [revenueMin, setRevenueMin] = useListState<number | string>('revenueMin', '');
+  const [noContact, setNoContact] = useListState<string | null>('noContact', null);
+  const [sort, setSort] = useListState('sort', '-created_at');
+  const [page, setPage] = useListState('page', 1);
+  const [pageSize, setPageSize] = useListState('pageSize', 25);
   const [selected, setSelected] = useState<number[]>([]);
   const [importOpen, setImportOpen] = useState(false);
   const industries = useDict('industry');
@@ -53,7 +54,8 @@ export default function CompaniesPage() {
     q: debounced || undefined, industry_id: industry, region_id: region, status, manager_id: manager ?? undefined,
     revenue_min: revenueMin === '' ? undefined : revenueMin, no_contact_days: noContact ?? undefined,
   };
-  const { data, isLoading } = useApi<Page<Company>>(['companies'], '/companies', { ...params, sort, page, page_size: pageSize });
+  const query = useApi<Page<Company>>(['companies'], '/companies', { ...params, sort, page, page_size: pageSize });
+  const { data, isLoading, isError } = query;
   const setFilter = <T,>(fn: (v: T) => void) => (v: T) => {
     fn(v);
     setPage(1);
@@ -146,6 +148,7 @@ export default function CompaniesPage() {
         </Paper>
       )}
 
+      <QueryFeedback query={query} hasData={!!data} />
       <Paper withBorder>
         <Table.ScrollContainer minWidth={900}>
           <Table>
@@ -209,7 +212,7 @@ export default function CompaniesPage() {
             </Table.Tbody>
           </Table>
         </Table.ScrollContainer>
-        {!isLoading && !data?.items.length && <Empty text="Компании не найдены" />}
+        {!isLoading && !isError && !data?.items.length && <Empty text="Компании не найдены" />}
       </Paper>
       {data && (
         <Pager page={page} pages={data.pages} total={data.total} pageSize={pageSize} onPage={setPage}

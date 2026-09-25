@@ -214,10 +214,12 @@ export default function DealCard() {
   };
   const createInvoice = async () => {
     try {
-      await api.post('/invoices', { deal_id: deal.id });
+      const { data } = await api.post('/invoices', { deal_id: deal.id });
       notifyOk('Счёт выставлен');
       qc.invalidateQueries({ queryKey: ['invoices'] });
       qc.invalidateQueries({ queryKey: ['activities'] });
+      qc.invalidateQueries({ queryKey: ['invoices-summary'] });
+      navigate(`/finance?invoice=${data.id}`);
     } catch (e) {
       notifyError(e);
     }

@@ -2,14 +2,17 @@ import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ActionIcon,
+  Alert,
   Badge,
   Box,
+  Button,
   Card,
   Center,
   Group,
   Pagination,
   Paper,
   Select,
+  Skeleton,
   Stack,
   Text,
   ThemeIcon,
@@ -17,7 +20,7 @@ import {
   Tooltip,
 } from '@mantine/core';
 import { IconArrowDownRight, IconArrowUpRight, IconInbox, IconPhoneCall } from '@tabler/icons-react';
-import { api, notifyError, notifyOk } from '@/api/client';
+import { api, errorMessage, notifyError, notifyOk } from '@/api/client';
 import { num } from '@/lib/format';
 
 export function PageHeader({ title, subtitle, actions, back }: {
@@ -77,11 +80,32 @@ export function Empty({ text = 'Пока ничего нет', action }: { text?
   );
 }
 
-export function StatCard({ label, value, hint, diff, icon, color = 'blue' }: {
-  label: string; value: ReactNode; hint?: ReactNode; diff?: number | null; icon?: ReactNode; color?: string;
+export function QueryFeedback({ query, hasData = false }: {
+  query: { isLoading: boolean; isError: boolean; isFetching: boolean; error: unknown; refetch: () => unknown };
+  hasData?: boolean;
+}) {
+  if (query.isError) return (
+    <Alert color="red" title={hasData ? 'Не удалось обновить данные' : 'Не удалось загрузить данные'} mb="md" role="alert">
+      <Text size="sm">{errorMessage(query.error)}{hasData && '. Показаны последние загруженные данные.'}</Text>
+      <Button mt="sm" variant="light" color="red" onClick={() => query.refetch()} loading={query.isFetching}>Повторить</Button>
+    </Alert>
+  );
+  if (query.isLoading && !hasData) return (
+    <Stack my="md" role="status" aria-label="Загрузка данных">
+      <Text size="sm" c="dimmed">Загрузка данных…</Text>
+      <Skeleton h={36} /><Skeleton h={36} /><Skeleton h={36} />
+    </Stack>
+  );
+  return null;
+}
+
+export function StatCard({ label, value, hint, diff, icon, color = 'blue', onClick }: {
+  label: string; value: ReactNode; hint?: ReactNode; diff?: number | null; icon?: ReactNode; color?: string; onClick?: () => void;
 }) {
   return (
-    <Card padding="md">
+    <Card padding="md" onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}
+      aria-label={onClick ? `${label}: открыть список` : undefined} className={onClick ? 'stat-card-action' : undefined}
+      onKeyDown={(event) => { if (onClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick(); } }}>
       <Group justify="space-between" align="flex-start" wrap="nowrap">
         <div>
           <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
@@ -170,8 +194,9 @@ export function Phone({ phone, links }: { phone: string | null | undefined; link
   if (!phone) return <>—</>;
   const call = async () => {
     try {
-      await api.post('/telephony/call', { phone, ...links });
-      notifyOk(`АТС соединяет вас с ${phone}`, 'Звонок');
+      const { data } = await api.post('/telephony/call', { phone, ...links });
+      notifyOk(data.provider === 'mock' ? 'Демонстрационный звонок записан в историю. Реальный вызов не выполнялся.'
+        : `АТС соединяет вас с ${phone}`, data.provider === 'mock' ? 'Демо-телефония' : 'Звонок');
     } catch (e) {
       notifyError(e, 'Не удалось позвонить');
     }

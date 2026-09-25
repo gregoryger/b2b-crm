@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="460" height="72" viewBox="0 0 460 72" role="img" aria-label="ТехноПартнёр">
+  <rect width="64" height="64" y="4" rx="14" fill="#1c7ed6"/>
+  <path d="M13 20h21v6h-7v26h-7V26h-7zm25 0h15v32h-6V26h-3v26h-6z" fill="#fff"/>
+  <text x="80" y="39" font-family="DejaVu Sans,Arial,sans-serif" font-size="30" font-weight="700" fill="#15324f">ТехноПартнёр</text>
+  <text x="82" y="60" font-family="DejaVu Sans,Arial,sans-serif" font-size="13" letter-spacing="1.1" fill="#62788d">ИТ-РЕШЕНИЯ ДЛЯ БИЗНЕСА</text>
+</svg>

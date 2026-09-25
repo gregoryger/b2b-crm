@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Accordion, Anchor, Button, Card, Grid, Group, Kbd, List, Stack, Text, ThemeIcon, Title } from '@mantine/core';
-import { IconBook, IconPlayerPlay, IconRoute } from '@tabler/icons-react';
+import { IconBook, IconRoute } from '@tabler/icons-react';
 import Onboarding from '@/components/Onboarding';
 import { PageHeader } from '@/components/ui';
 
@@ -73,16 +73,16 @@ const SECTIONS = [
   },
 ];
 
-const VIDEOS = [
-  'Первый вход и обзор интерфейса (3 мин)', 'Работа с лидами (5 мин)', 'Канбан и карточка сделки (6 мин)',
-  'Коммерческое предложение за 2 минуты (4 мин)', 'Отчёты для руководителя (7 мин)', 'Администрирование системы (8 мин)',
+const TRAINING = [
+  'Первый вход и обзор интерфейса', 'Работа с лидами', 'Канбан и карточка сделки',
+  'Подготовка коммерческого предложения', 'Отчёты для руководителя', 'Администрирование системы',
 ];
 
 export default function HelpPage() {
   const [tour, setTour] = useState(false);
   return (
     <>
-      <PageHeader title="Помощь" subtitle="Инструкции, видеоуроки и горячие клавиши"
+      <PageHeader title="Помощь" subtitle="Инструкции, план обучения и горячие клавиши"
         actions={<Button leftSection={<IconRoute size={16} />} onClick={() => setTour(true)}>Пройти обучающий тур</Button>} />
       <Grid>
         <Grid.Col span={{ base: 12, md: 8 }}>
@@ -101,11 +101,11 @@ export default function HelpPage() {
         <Grid.Col span={{ base: 12, md: 4 }}>
           <Stack>
             <Card>
-              <Group mb="md"><ThemeIcon variant="light" color="red"><IconPlayerPlay size={18} /></ThemeIcon><Title order={4}>Видеоуроки</Title></Group>
-              <Stack gap="xs">
-                {VIDEOS.map((v) => <Text key={v} size="sm">▶ {v}</Text>)}
-              </Stack>
-              <Text size="xs" c="dimmed" mt="sm">Видео записываются на этапе внедрения под ваши процессы и публикуются здесь.</Text>
+              <Group mb="md"><ThemeIcon variant="light"><IconBook size={18} /></ThemeIcon><Title order={4}>План обучения</Title></Group>
+              <List type="ordered" size="sm" spacing="xs">
+                {TRAINING.map((v) => <List.Item key={v}>{v}</List.Item>)}
+              </List>
+              <Text size="xs" c="dimmed" mt="sm">Темы обучения при внедрении. Сейчас доступны инструкции и интерактивный тур; видеозаписи ещё не опубликованы.</Text>
             </Card>
             <Card>
               <Title order={5} mb="sm">Горячие клавиши</Title>

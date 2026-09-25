@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
 import { DatesProvider } from '@mantine/dates';
 import { Notifications } from '@mantine/notifications';
@@ -24,6 +24,10 @@ const queryClient = new QueryClient({
   },
 });
 
+const router = createBrowserRouter([
+  { path: '*', element: <AuthProvider><App /></AuthProvider> },
+]);
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <MantineProvider theme={theme} defaultColorScheme="light">
@@ -31,11 +35,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <QueryClientProvider client={queryClient}>
           <ModalsProvider labels={{ confirm: 'Подтвердить', cancel: 'Отмена' }}>
             <Notifications position="top-right" limit={4} />
-            <BrowserRouter>
-              <AuthProvider>
-                <App />
-              </AuthProvider>
-            </BrowserRouter>
+            <RouterProvider router={router} />
           </ModalsProvider>
         </QueryClientProvider>
       </DatesProvider>

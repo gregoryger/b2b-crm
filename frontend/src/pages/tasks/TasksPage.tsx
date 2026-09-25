@@ -1,3 +1,4 @@
+import { useListState } from '@/lib/useListState';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button, Card, Divider, Group, MultiSelect, SegmentedControl, Select, Stack, Tabs, Text } from '@mantine/core';
@@ -8,7 +9,7 @@ import type { Page, Task } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { TaskModal } from '@/components/forms';
 import { CompleteTaskModal, TaskRow } from '@/components/TasksPanel';
-import { Empty, PageHeader, Pager } from '@/components/ui';
+import { Empty, PageHeader, Pager, QueryFeedback } from '@/components/ui';
 import { dayjs } from '@/lib/format';
 import { TASK_TYPES } from '@/lib/labels';
 
@@ -31,15 +32,24 @@ function groupLabel(t: Task) {
 export default function TasksPage() {
   const { can } = useAuth();
   const [params, setParams] = useSearchParams();
-  const [tab, setTab] = useState('today');
-  const [scope, setScope] = useState('mine');
-  const [types, setTypes] = useState<string[]>([]);
-  const [assignee, setAssignee] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
+  const [tab, setTab] = useListState('tab', 'today');
+  const [scope, setScope] = useListState('scope', 'mine');
+  const [types, setTypes] = useListState<string[]>('types', []);
+  const [assignee, setAssignee] = useListState<string | null>('assignee', null);
+  const [page, setPage] = useListState('page', 1);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
   const [completing, setCompleting] = useState<Task | null>(null);
   const users = useUsers();
+
+  useEffect(() => {
+    const targetTab = params.get('tab');
+    if (targetTab && TABS.some((t) => t.value === targetTab)) {
+      setTab(targetTab); setTypes([]); setPage(1);
+      setScope(params.get('scope') === 'all' && can('tasks.view_all') ? 'all' : 'mine');
+      setAssignee(can('tasks.view_all') ? params.get('assignee') || null : null);
+    }
+  }, [params, can]);
 
   useEffect(() => {
     const openId = params.get('open');
@@ -57,7 +67,8 @@ export default function TasksPage() {
   if (tab === 'overdue') Object.assign(filters, { overdue: true });
   if (tab === 'upcoming') Object.assign(filters, { status: ['open'], date_from: dayjs().endOf('day').toISOString() });
   if (tab === 'done') Object.assign(filters, { status: ['done'] });
-  const { data, isLoading } = useApi<Page<Task>>(['tasks'], '/tasks', filters);
+  const query = useApi<Page<Task>>(['tasks'], '/tasks', filters);
+  const { data, isLoading, isError } = query;
 
   const grouped: [string, Task[]][] = [];
   (data?.items ?? []).forEach((t) => {
@@ -90,8 +101,9 @@ export default function TasksPage() {
           )}
         </Group>
       </Group>
+      <QueryFeedback query={query} hasData={!!data} />
       <Card>
-        {!isLoading && !data?.items.length && <Empty text={tab === 'overdue' ? 'Просроченных задач нет 👍' : 'Задач нет'} />}
+        {!isLoading && !isError && !data?.items.length && <Empty text={tab === 'overdue' ? 'Просроченных задач нет 👍' : 'Задач нет'} />}
         <Stack gap="md">
           {grouped.map(([label, tasks]) => (
             <div key={label}>

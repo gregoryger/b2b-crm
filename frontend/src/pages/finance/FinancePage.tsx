@@ -1,3 +1,4 @@
+import { useListState } from '@/lib/useListState';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -28,7 +29,7 @@ import { api, download, notifyError, notifyOk, openPdf } from '@/api/client';
 import { useApi } from '@/api/hooks';
 import type { Act, Invoice, Page, Report } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
-import { Empty, EntityLink, PageHeader, Pager, StatCard, StatusBadge } from '@/components/ui';
+import { Empty, EntityLink, PageHeader, Pager, QueryFeedback, StatCard, StatusBadge } from '@/components/ui';
 import { date, dayjs, money, moneyShort, plural, toISODate } from '@/lib/format';
 import { ACT_STATUS, INVOICE_STATUS } from '@/lib/labels';
 import { IconAlertTriangle, IconCash, IconReceipt } from '@tabler/icons-react';
@@ -36,7 +37,8 @@ import { IconAlertTriangle, IconCash, IconReceipt } from '@tabler/icons-react';
 function InvoiceDrawer({ id, onClose }: { id: number | null; onClose: () => void }) {
   const qc = useQueryClient();
   const { can } = useAuth();
-  const { data: inv } = useApi<Invoice>(['invoice', id], id ? `/invoices/${id}` : null);
+  const query = useApi<Invoice>(['invoice', id], id ? `/invoices/${id}` : null);
+  const { data: inv } = query;
   const [amount, setAmount] = useState<number | string>('');
   const [paidAt, setPaidAt] = useState<Date | null>(new Date());
   const [comment, setComment] = useState('');
@@ -81,6 +83,7 @@ function InvoiceDrawer({ id, onClose }: { id: number | null; onClose: () => void
   };
   return (
     <Drawer opened={!!id} onClose={onClose} position="right" size="lg" title={inv ? `Счёт ${inv.number}` : ''}>
+      <QueryFeedback query={query} hasData={!!inv} />
       {inv && (
         <Stack>
           <Group>
@@ -179,12 +182,12 @@ export default function FinancePage() {
   const { can } = useAuth();
   const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const [tab, setTab] = useState('invoices');
-  const [q, setQ] = useState('');
+  const [tab, setTab] = useListState('tab', 'invoices');
+  const [q, setQ] = useListState('q', '');
   const [debounced] = useDebouncedValue(q, 300);
-  const [status, setStatus] = useState<string[]>([]);
-  const [overdue, setOverdue] = useState(false);
-  const [page, setPage] = useState(1);
+  const [status, setStatus] = useListState<string[]>('status', []);
+  const [overdue, setOverdue] = useListState('overdue', false);
+  const [page, setPage] = useListState('page', 1);
   const [openId, setOpenId] = useState<number | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
 
@@ -197,8 +200,9 @@ export default function FinancePage() {
     }
   }, [params, setParams]);
 
-  const { data: summary } = useApi<{ receivable: number; overdue: number; overdue_count: number; paid_this_month: number }>(
+  const summaryQuery = useApi<{ receivable: number; overdue: number; overdue_count: number; paid_this_month: number; rates: Record<string, number> }>(
     ['invoices-summary'], '/invoices/summary');
+  const { data: summary } = summaryQuery;
   const invoices = useApi<Page<Invoice>>(['invoices'], tab === 'invoices' ? '/invoices' : null,
     { q: debounced || undefined, status, overdue: overdue || undefined, page, page_size: 25 });
   const acts = useApi<Page<Act>>(['acts'], tab === 'acts' ? '/acts' : null, { page, page_size: 25 });
@@ -219,12 +223,18 @@ export default function FinancePage() {
         actions={can('finance.edit') && (
           <Button variant="default" leftSection={<IconFileExport size={16} />} onClick={() => setExportOpen(true)}>Выгрузка в 1С</Button>
         )} />
-      <SimpleGrid cols={{ base: 1, sm: 3 }} mb="md">
-        <StatCard label="Дебиторская задолженность" value={moneyShort(summary?.receivable)} icon={<IconReceipt size={20} />} />
+      <QueryFeedback query={summaryQuery} hasData={!!summary} />
+      {summary && <SimpleGrid cols={{ base: 1, sm: 3 }} mb="md">
+        <StatCard label="Дебиторская задолженность" value={moneyShort(summary?.receivable)} icon={<IconReceipt size={20} />}
+          onClick={() => { setTab('debt'); setPage(1); }} />
         <StatCard label="Просрочено" value={moneyShort(summary?.overdue)} hint={`${summary?.overdue_count ?? 0} ${plural(summary?.overdue_count ?? 0, ['счёт', 'счёта', 'счетов'])}`}
-          icon={<IconAlertTriangle size={20} />} color="red" />
+          icon={<IconAlertTriangle size={20} />} color="red" onClick={() => {
+            setTab('invoices'); setOverdue(true); setStatus([]); setQ(''); setPage(1);
+          }} />
         <StatCard label="Поступило в этом месяце" value={moneyShort(summary?.paid_this_month)} icon={<IconCash size={20} />} color="teal" />
-      </SimpleGrid>
+      </SimpleGrid>}
+      {summary && <Text size="xs" c="dimmed" mb="md">Итоги в рублях по текущим курсам CRM: {Object.entries(summary.rates ?? {})
+        .filter(([currency]) => currency !== 'RUB').map(([currency, rate]) => `1 ${currency} = ${money(rate, 'RUB', 2)}`).join(' · ')}</Text>}
       <Tabs value={tab} onChange={(v) => { setTab(v!); setPage(1); }} mb="md">
         <Tabs.List>
           <Tabs.Tab value="invoices">Счета</Tabs.Tab>
@@ -233,6 +243,8 @@ export default function FinancePage() {
         </Tabs.List>
       </Tabs>
 
+      <QueryFeedback query={tab === 'invoices' ? invoices : tab === 'acts' ? acts : receivables}
+        hasData={!!(tab === 'invoices' ? invoices.data : tab === 'acts' ? acts.data : receivables.data)} />
       {tab === 'invoices' && (
         <>
           <Paper withBorder p="md" mb="md">
@@ -274,7 +286,7 @@ export default function FinancePage() {
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
-            {!invoices.isLoading && !invoices.data?.items.length && <Empty text="Счетов нет" />}
+            {!invoices.isLoading && !invoices.isError && !invoices.data?.items.length && <Empty text="Счетов нет" />}
           </Paper>
           {invoices.data && <Pager page={page} pages={invoices.data.pages} total={invoices.data.total} pageSize={25} onPage={setPage} />}
         </>
@@ -293,7 +305,7 @@ export default function FinancePage() {
                     <Table.Tr key={a.id}>
                       <Table.Td><Text size="sm" fw={500}>{a.number}</Text><Text size="xs" c="dimmed">{date(a.act_date)}</Text></Table.Td>
                       <Table.Td>{a.company?.name}</Table.Td>
-                      <Table.Td ta="right">{money(a.amount)}</Table.Td>
+                      <Table.Td ta="right">{money(a.amount, a.currency)}</Table.Td>
                       <Table.Td>
                         <Select size="xs" w={140} value={a.status} allowDeselect={false} disabled={!can('finance.edit')}
                           data={Object.entries(ACT_STATUS).map(([value, s]) => ({ value, label: s.label }))}
@@ -310,7 +322,7 @@ export default function FinancePage() {
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
-            {!acts.isLoading && !acts.data?.items.length && <Empty text="Актов нет" />}
+            {!acts.isLoading && !acts.isError && !acts.data?.items.length && <Empty text="Актов нет" />}
           </Paper>
           {acts.data && <Pager page={page} pages={acts.data.pages} total={acts.data.total} pageSize={25} onPage={setPage} />}
         </>

@@ -28,7 +28,8 @@ from app.services import access
 from app.services.common import get_setting, next_number, paginate
 from app.services.documents import act_pdf, invoice_pdf
 from app.services.journal import audit, log_activity
-from app.services.money import calc_lines
+from app.services.currencies import currency_rates, to_rubles
+from app.services.money import calc_lines, fmt_money
 from app.services.notify import notify
 
 router = APIRouter(tags=["Финансы: счета, оплаты, акты"])
@@ -80,27 +81,33 @@ def list_invoices(
 def invoices_summary(user: User = Depends(require("finance.view")), db: Session = Depends(get_db)):
     stmt = access.scope_invoices(select(Invoice).where(Invoice.status.in_(["issued", "partially_paid"])), user)
     today = date.today()
+    rates = currency_rates(db)
     total = overdue = 0.0
     overdue_count = 0
     for inv in db.scalars(stmt).unique():
-        debt = float(inv.amount) - float(inv.paid_amount)
+        debt = round(to_rubles(Decimal(inv.amount) - Decimal(inv.paid_amount), inv.currency, rates), 2)
         total += debt
         if inv.due_date < today:
             overdue += debt
             overdue_count += 1
     month_start = today.replace(day=1)
-    pq = select(func.coalesce(func.sum(Payment.amount), 0)).join(Invoice).where(Payment.paid_at >= month_start)
+    pq = select(Payment.amount, Invoice.currency).join(Invoice).where(
+        Payment.paid_at >= month_start, Payment.paid_at <= today)
     if user.role == "manager":
         pq = pq.where(Invoice.owner_id == user.id)
     return {"receivable": round(total, 2), "overdue": round(overdue, 2), "overdue_count": overdue_count,
-            "paid_this_month": float(db.scalar(pq) or 0)}
+            "paid_this_month": round(sum(to_rubles(a, c, rates) for a, c in db.execute(pq)), 2),
+            "currency": "RUB", "rates": rates}
 
 
 @router.post("/invoices", response_model=InvoiceDetail, status_code=201, summary="Выставить счёт")
 def create_invoice(data: InvoiceCreate, request: Request, user: User = Depends(require("finance.edit")),
                    db: Session = Depends(get_db)):
-    deal = access.get_deal(db, user, data.deal_id) if data.deal_id else None
     proposal = access.get_proposal(db, user, data.proposal_id) if data.proposal_id else None
+    deal_id = data.deal_id or (proposal.deal_id if proposal else None)
+    deal = access.get_deal(db, user, deal_id) if deal_id else None
+    if proposal and data.deal_id and proposal.deal_id != data.deal_id:
+        raise HTTPException(422, "КП относится к другой сделке")
     company_id = data.company_id or (deal.company_id if deal else None) or (proposal.company_id if proposal else None)
     if not company_id:
         raise HTTPException(422, "Укажите клиента")
@@ -116,16 +123,19 @@ def create_invoice(data: InvoiceCreate, request: Request, user: User = Depends(r
                   "discount_percent": 0}]
     else:
         raise HTTPException(422, "Добавьте позиции счёта")
-    calc = calc_lines(items, data.vat_rate)
+    currency = data.currency or (proposal.currency if proposal else deal.currency if deal else "RUB")
+    vat_rate = data.vat_rate if data.vat_rate is not None else proposal.vat_rate if proposal else 20
+    calc = calc_lines(items, vat_rate)
     issued = data.issued_at or date.today()
     inv = Invoice(number=next_number(db, "СЧ"), deal_id=deal.id if deal else None, company_id=company_id,
-                  owner_id=deal.owner_id if deal and deal.owner_id else user.id, issued_at=issued,
-                  due_date=data.due_date or issued + timedelta(days=5), currency=data.currency, vat_rate=data.vat_rate,
+                  owner_id=(deal.owner_id if deal else proposal.owner_id if proposal else None) or user.id,
+                  issued_at=issued,
+                  due_date=data.due_date or issued + timedelta(days=5), currency=currency, vat_rate=vat_rate,
                   items=[{k: v for k, v in line.items() if k != "n"} for line in calc["lines"]], amount=calc["total"],
                   paid_amount=0, status="issued", comment=data.comment)
     db.add(inv)
     db.flush()
-    log_activity(db, type="invoice", title=f"Выставлен счёт {inv.number} на {float(inv.amount):,.2f} ₽".replace(",", " "),
+    log_activity(db, type="invoice", title=f"Выставлен счёт {inv.number} на {fmt_money(inv.amount, inv.currency)}",
                  object_type="deal" if deal else "company", object_id=deal.id if deal else company_id, user=user,
                  deal_id=inv.deal_id, company_id=company_id, meta={"invoice_id": inv.id})
     audit(db, user, "invoice_create", f"Выставлен счёт {inv.number}", entity="invoice", entity_id=inv.id,
@@ -180,7 +190,7 @@ def add_payment(invoice_id: int, data: PaymentIn, request: Request, user: User =
         raise HTTPException(422, f"Сумма оплаты больше остатка долга ({float(debt):.2f})")
     inv.payments.append(Payment(amount=data.amount, paid_at=data.paid_at, comment=data.comment, created_by=user.id))
     _recalc(inv)
-    log_activity(db, type="payment", title=f"Оплата по счёту {inv.number}: {data.amount:,.2f} ₽".replace(",", " "),
+    log_activity(db, type="payment", title=f"Оплата по счёту {inv.number}: {fmt_money(data.amount, inv.currency)}",
                  object_type="deal" if inv.deal_id else "company", object_id=inv.deal_id or inv.company_id or 0,
                  user=user, deal_id=inv.deal_id, company_id=inv.company_id, meta={"invoice_id": inv.id})
     audit(db, user, "payment_add", f"Оплата {data.amount} по счёту {inv.number}", entity="invoice", entity_id=inv.id,
@@ -333,7 +343,7 @@ def export_1c(date_from: date, date_to: date, only_new: bool = True, request: Re
         el = ET.SubElement(docs, "АктВыполненныхРабот", {
             "Ид": f"act-{act.id}", "Номер": act.number, "Дата": act.act_date.isoformat(),
             "КонтрагентИд": str(act.company_id or ""), "СчетИд": f"inv-{act.invoice_id}" if act.invoice_id else "",
-            "СтавкаНДС": str(act.vat_rate), "Сумма": f"{Decimal(act.amount):.2f}"})
+            "Валюта": act.currency, "СтавкаНДС": str(act.vat_rate), "Сумма": f"{Decimal(act.amount):.2f}"})
         add_lines(el, act.items)
         act.exported_1c_at = utcnow()
     ET.indent(root)

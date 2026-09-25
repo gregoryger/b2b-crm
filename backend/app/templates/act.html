@@ -31,7 +31,7 @@
   <tr><td>Итого:</td><td class="num">{{ total | money("") }}</td></tr>
   <tr><td>{% if act.vat_rate %}В том числе НДС ({{ act.vat_rate }}%):{% else %}Без налога (НДС):{% endif %}</td><td class="num">{% if act.vat_rate %}{{ vat | money("") }}{% else %}—{% endif %}</td></tr>
 </table>
-<p>Всего оказано услуг {{ lines | length }}, на сумму {{ total | money("RUB") }}<br><b>{{ words }}</b></p>
+<p>Всего оказано услуг {{ lines | length }}, на сумму {{ total | money(act.currency) }}<br><b>{{ words }}</b></p>
 <p>Вышеперечисленные услуги выполнены полностью и в срок. Заказчик претензий по объёму, качеству и срокам оказания услуг не имеет.</p>
 
 <table class="sign" style="border-top:1.5pt solid #111">

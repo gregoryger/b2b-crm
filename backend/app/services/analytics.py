@@ -31,6 +31,7 @@ from app.models import (
     User,
 )
 from app.services.common import get_setting
+from app.services.currencies import currency_rates as _rates, to_rubles as _rub
 
 MONTHS_RU = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]
 
@@ -80,14 +81,6 @@ def make_scope(user: User, owner_id: int | None = None, **filters) -> Scope:
     if not has_perm(user.role, "analytics.team"):
         owner_id = user.id
     return Scope(owner_id=owner_id, **filters)
-
-
-def _rates(db: Session) -> dict[str, float]:
-    return {k: float(v) for k, v in (get_setting(db, "currencies") or {"RUB": 1}).items()}
-
-
-def _rub(amount, currency: str, rates: dict[str, float]) -> float:
-    return float(amount or 0) * rates.get(currency or "RUB", 1.0)
 
 
 def _deal_filters(scope: Scope) -> list:
@@ -177,16 +170,19 @@ def summary(db: Session, period: Period, scope: Scope) -> dict:
     }
 
 
-def revenue_by_month(db: Session, scope: Scope, months: int = 12) -> list[dict]:
+def revenue_by_month(db: Session, scope: Scope, period: Period, months: int = 12) -> list[dict]:
+    """Выручка по календарным месяцам: не меньше `months` месяцев, заканчивая концом выбранного периода."""
     rates = _rates(db)
-    today = date.today()
-    start_month = (today.replace(day=1) - timedelta(days=31 * (months - 1))).replace(day=1)
-    start = datetime.combine(start_month, time.min, tzinfo=timezone.utc)
+    last = period.date_to.replace(day=1)
+    back = last.year * 12 + last.month - 1 - (months - 1)
+    first = min(period.date_from.replace(day=1), date(back // 12, back % 12 + 1, 1))
+    start = datetime.combine(first, time.min, tzinfo=timezone.utc)
     rows = db.execute(select(Deal.closed_at, Deal.amount, Deal.currency, Deal.status).where(
-        *_deal_filters(scope), Deal.status.in_(["won", "lost"]), Deal.closed_at >= start)).all()
+        *_deal_filters(scope), Deal.status.in_(["won", "lost"]),
+        Deal.closed_at >= start, Deal.closed_at < period.end)).all()
     buckets: dict[tuple[int, int], dict] = {}
-    m = start_month
-    while m <= today:
+    m = first
+    while m <= period.date_to:
         buckets[(m.year, m.month)] = {"month": f"{MONTHS_RU[m.month - 1]} {m.year % 100:02d}",
                                       "revenue": 0.0, "won": 0, "lost": 0}
         m = (m.replace(day=28) + timedelta(days=4)).replace(day=1)
@@ -285,6 +281,7 @@ def funnel(db: Session, period: Period, scope: Scope) -> dict:
     durations = dict(db.execute(
         select(DealStageHistory.from_stage_id, func.avg(DealStageHistory.seconds_in_prev))
         .where(DealStageHistory.changed_at >= period.start, DealStageHistory.changed_at < period.end,
+               DealStageHistory.deal_id.in_(select(Deal.id).where(*_deal_filters(scope))),
                DealStageHistory.seconds_in_prev.is_not(None))
         .group_by(DealStageHistory.from_stage_id)).all())
 

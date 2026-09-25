@@ -142,7 +142,7 @@ def act_pdf(db: Session, act: Act) -> bytes:
     calc = calc_lines(act.items or [], act.vat_rate)
     html = env.get_template("act.html").render(
         act=act, profile=profile, lines=calc["lines"], total=calc["total"], vat=calc["vat"],
-        words=amount_in_words(calc["total"], "RUB"),
+        words=amount_in_words(calc["total"], act.currency),
     )
     return html_to_pdf(html)
 

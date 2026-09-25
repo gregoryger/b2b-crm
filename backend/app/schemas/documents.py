@@ -140,8 +140,8 @@ class InvoiceCreate(BaseModel):
     proposal_id: int | None = None
     issued_at: date | None = None
     due_date: date | None = None
-    vat_rate: int = 20
-    currency: str = "RUB"
+    vat_rate: int | None = Field(default=None, ge=0, le=100)
+    currency: str | None = None
     items: list[LineIn] | None = None
     comment: str | None = None
 
@@ -199,6 +199,7 @@ class ActOut(ORM):
     company: CompanyShort | None
     act_date: date
     amount: float
+    currency: str
     vat_rate: int
     items: list
     status: str

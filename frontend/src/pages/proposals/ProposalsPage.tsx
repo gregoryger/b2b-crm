@@ -1,3 +1,4 @@
+import { useListState } from '@/lib/useListState';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Group, Modal, MultiSelect, Paper, Select, Stack, Table, Text, TextInput } from '@mantine/core';
@@ -46,10 +47,10 @@ function NewProposalModal({ opened, onClose }: { opened: boolean; onClose: () =>
 
 export default function ProposalsPage() {
   const navigate = useNavigate();
-  const [q, setQ] = useState('');
+  const [q, setQ] = useListState('q', '');
   const [debounced] = useDebouncedValue(q, 300);
-  const [status, setStatus] = useState<string[]>([]);
-  const [page, setPage] = useState(1);
+  const [status, setStatus] = useListState<string[]>('status', []);
+  const [page, setPage] = useListState('page', 1);
   const [creating, setCreating] = useState(false);
   const { data, isLoading } = useApi<Page<Proposal>>(['proposals'], '/proposals', {
     q: debounced || undefined, status, page, page_size: 25,

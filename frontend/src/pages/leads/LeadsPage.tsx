@@ -1,3 +1,4 @@
+import { useListState } from '@/lib/useListState';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Checkbox, Group, Menu, MultiSelect, Paper, Select, Table, Tabs, Text, TextInput } from '@mantine/core';
@@ -28,12 +29,12 @@ export default function LeadsPage() {
   const { open } = useQuickCreate();
   const qc = useQueryClient();
   const [tab, setTab] = useState('active');
-  const [q, setQ] = useState('');
+  const [q, setQ] = useListState('q', '');
   const [debounced] = useDebouncedValue(q, 300);
-  const [sources, setSources] = useState<string[]>([]);
-  const [assignee, setAssignee] = useState<string | null>(null);
+  const [sources, setSources] = useListState<string[]>('sources', []);
+  const [assignee, setAssignee] = useListState<string | null>('assignee', null);
   const [sort, setSort] = useState('-created_at');
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useListState('page', 1);
   const [pageSize, setPageSize] = useState(25);
   const [selected, setSelected] = useState<number[]>([]);
   const src = useDict('lead_source');

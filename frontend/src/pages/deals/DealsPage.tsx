@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useListState } from '@/lib/useListState';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Avatar,
@@ -26,14 +27,14 @@ import type { BoardColumn, Deal, Page } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { useQuickCreate } from '@/components/QuickCreate';
 import SortTh from '@/components/SortTh';
-import { Empty, PageHeader, Pager, StatusBadge } from '@/components/ui';
+import { Empty, PageHeader, Pager, QueryFeedback, StatusBadge } from '@/components/ui';
 import { date, dayjs, initials, money, moneyShort, num, plural } from '@/lib/format';
 import { DEAL_STATUS } from '@/lib/labels';
 import LostModal from './LostModal';
 
 function DealCardMini({ d }: { d: Deal }) {
   const overdue = d.status === 'open' && d.close_date && dayjs(d.close_date).isBefore(dayjs(), 'day');
-  const stale = d.status === 'open' && dayjs().diff(d.updated_at, 'day') >= 14;
+  const stale = d.is_stale;
   return (
     <Card padding="sm" className="kanban-card" radius="md">
       <Text size="sm" fw={600} lineClamp={2}>{d.title}</Text>
@@ -65,7 +66,10 @@ function DealCardMini({ d }: { d: Deal }) {
   );
 }
 
-function Board({ columns, onMove }: { columns: BoardColumn[]; onMove: (dealId: number, stageId: number) => void }) {
+function Board({ columns, onMove, onLoadMore, loadingStage }: {
+  columns: BoardColumn[]; onMove: (dealId: number, stageId: number) => void;
+  onLoadMore: (stageId: number) => void; loadingStage: number | null;
+}) {
   const navigate = useNavigate();
   const onDragEnd = (r: DropResult) => {
     if (!r.destination || r.destination.droppableId === r.source.droppableId) return;
@@ -101,6 +105,12 @@ function Board({ columns, onMove }: { columns: BoardColumn[]; onMove: (dealId: n
                     </Draggable>
                   ))}
                   {provided.placeholder}
+                  {col.deals.length < col.count && (
+                    <Button fullWidth variant="light" size="xs" mt="xs" loading={loadingStage === col.stage.id}
+                      disabled={loadingStage !== null && loadingStage !== col.stage.id} onClick={() => onLoadMore(col.stage.id)}>
+                      Показать ещё · {col.deals.length} из {col.count}
+                    </Button>
+                  )}
                   {!col.deals.length && <Text size="xs" c="dimmed" ta="center" py="md">Перетащите сделку сюда</Text>}
                 </div>
               )}
@@ -119,16 +129,22 @@ export default function DealsPage() {
   const { open } = useQuickCreate();
   const [params] = useSearchParams();
   const stale = params.get('stale') === '1';
-  const [view, setView] = useState(stale ? 'list' : 'board');
-  const [q, setQ] = useState('');
+  const [view, setView] = useListState('view', stale ? 'list' : 'board');
+  const [q, setQ] = useListState('q', '');
   const [debounced] = useDebouncedValue(q, 300);
-  const [owner, setOwner] = useState<string | null>(null);
-  const [statuses, setStatuses] = useState<string[]>(['open']);
-  const [stageIds, setStageIds] = useState<string[]>([]);
-  const [sort, setSort] = useState('-created_at');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [owner, setOwner] = useListState<string | null>('owner', null);
+  const [statuses, setStatuses] = useListState<string[]>('statuses', ['open']);
+  const [stageIds, setStageIds] = useListState<string[]>('stageIds', []);
+  const [sort, setSort] = useListState('sort', '-created_at');
+  const [page, setPage] = useListState('page', 1);
+  const [pageSize, setPageSize] = useListState('pageSize', 25);
   const [lost, setLost] = useState<{ dealId: number; stageId: number } | null>(null);
+  const [loadingStage, setLoadingStage] = useState<number | null>(null);
+  useEffect(() => {
+    if (params.get('view') === 'list' || stale) setView('list');
+    if (params.has('status')) { setStatuses(params.get('status') === 'open' ? ['open'] : []); setStageIds([]); setQ(''); setPage(1); }
+    if (params.has('owner')) setOwner(params.get('owner') || null);
+  }, [params, stale]);
   const users = useUsers('manager,head');
   const { data: stages } = useStages();
   const common = { q: debounced || undefined, owner_id: owner ?? undefined };
@@ -136,6 +152,22 @@ export default function DealsPage() {
   const list = useApi<Page<Deal>>(['deals'], view === 'list' ? '/deals' : null, {
     ...common, status: statuses, stage_id: stageIds, sort, page, page_size: pageSize, stale: stale || undefined,
   });
+
+  const loadMore = async (stageId: number) => {
+    if (loadingStage !== null) return;
+    const column = board.data?.find((c) => c.stage.id === stageId);
+    if (!column) return;
+    setLoadingStage(stageId);
+    try {
+      const { data } = await api.get<BoardColumn[]>('/deals/board', { params: {
+        ...common, stage_id: stageId, offset: column.deals.length,
+      } });
+      const next = data[0];
+      if (next) qc.setQueryData<BoardColumn[]>(['board', common], (cols) => cols?.map((c) => c.stage.id === stageId
+        ? { ...next, deals: [...c.deals, ...next.deals.filter((d) => !c.deals.some((old) => old.id === d.id))] } : c));
+    } catch (error) { notifyError(error); }
+    finally { setLoadingStage(null); }
+  };
 
   const move = async (dealId: number, stageId: number, lostReasonId?: number, comment?: string) => {
     const stage = stages?.find((s) => s.id === stageId);
@@ -193,8 +225,9 @@ export default function DealsPage() {
         </Group>
       </Paper>
 
+      <QueryFeedback query={view === 'board' ? board : list} hasData={!!(view === 'board' ? board.data : list.data)} />
       {view === 'board' ? (
-        board.data ? <Board columns={board.data} onMove={(d, s) => move(d, s)} /> : <Stack h={300} />
+        board.data ? <Board columns={board.data} onMove={(d, s) => move(d, s)} onLoadMore={loadMore} loadingStage={loadingStage} /> : <Stack h={300} />
       ) : (
         <>
           <Paper withBorder>
@@ -235,7 +268,7 @@ export default function DealsPage() {
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
-            {!list.isLoading && !list.data?.items.length && <Empty text="Сделок не найдено" />}
+            {!list.isLoading && !list.isError && !list.data?.items.length && <Empty text="Сделок не найдено" />}
           </Paper>
           {list.data && <Pager page={page} pages={list.data.pages} total={list.data.total} pageSize={pageSize} onPage={setPage}
             onPageSize={(s) => { setPageSize(s); setPage(1); }} />}

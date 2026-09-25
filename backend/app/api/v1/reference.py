@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require
+from app.core.config import settings
 from app.core.security import random_token
 from app.db.session import get_db
 from app.models import (
@@ -292,6 +293,21 @@ def delete_marketing_spend(row_id: int, user: User = Depends(require("marketing.
 # ---------- Системные настройки ----------
 
 PUBLIC_SETTINGS = {"company_profile", "currencies"}
+
+
+@router.get("/integrations/status", summary="Режимы интеграций без секретов подключения")
+def integration_status(user: User = Depends(require("settings.manage"))):
+    return {
+        "smtp": "demo" if settings.SMTP_HOST in ("mailpit", "localhost", "127.0.0.1") else
+                "configured" if settings.SMTP_HOST else "not_configured",
+        "imap": "disabled" if not settings.IMAP_ENABLED else
+                "configured" if settings.IMAP_HOST and settings.IMAP_USER and settings.IMAP_PASSWORD else "not_configured",
+        "telephony": "demo" if settings.TELEPHONY_PROVIDER == "mock" else
+                     "configured" if settings.TELEPHONY_API_URL else "not_configured",
+        "telegram": "configured" if settings.TELEGRAM_BOT_TOKEN else "not_configured",
+        "accounting": "export",
+        "rate_limit": settings.RATE_LIMIT_PER_MINUTE,
+    }
 
 
 @router.get("/settings")

@@ -31,8 +31,8 @@ import { UserSelect } from '@/components/selects';
 import PeriodPicker, { Period, periodFromPreset } from '@/components/PeriodPicker';
 import { CompleteTaskModal, TaskRow } from '@/components/TasksPanel';
 import { TaskModal } from '@/components/forms';
-import { Empty, PageHeader, StatCard } from '@/components/ui';
-import { money, moneyShort, num, pct, plural, smartDate } from '@/lib/format';
+import { Empty, PageHeader, QueryFeedback, StatCard } from '@/components/ui';
+import { date, money, moneyShort, num, pct, plural, smartDate } from '@/lib/format';
 
 interface Summary {
   revenue: number; won_count: number; lost_count: number; win_rate: number; avg_check: number;
@@ -73,9 +73,10 @@ export default function DashboardPage() {
   const [ownerId, setOwnerId] = useState<number | null>(null);
   const [task, setTask] = useState<Task | null>(null);
   const [completing, setCompleting] = useState<Task | null>(null);
-  const { data, isLoading } = useApi<Dashboard>(['dashboard'], '/analytics/dashboard', {
+  const query = useApi<Dashboard>(['dashboard'], '/analytics/dashboard', {
     date_from: period.from, date_to: period.to, owner_id: ownerId ?? undefined,
   });
+  const { data, isLoading } = query;
   const s = data?.summary;
   const p = data?.previous;
   const team = can('analytics.team');
@@ -96,11 +97,12 @@ export default function DashboardPage() {
           </>
         }
       />
-      {isLoading || !s || !p ? (
+      {query.isError && <QueryFeedback query={query} hasData={!!data} />}
+      {isLoading ? (
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
           {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} h={110} radius="md" />)}
         </SimpleGrid>
-      ) : (
+      ) : s && p && data ? (
         <Stack>
           <SimpleGrid cols={{ base: 1, xs: 2, lg: 4 }}>
             <StatCard label="Выручка" value={moneyShort(s.revenue)} diff={diff(s.revenue, p.revenue)}
@@ -112,6 +114,7 @@ export default function DashboardPage() {
             <StatCard label="Конверсия лид → сделка" value={pct(s.lead_conversion)}
               hint={`${num(s.leads)} ${plural(s.leads, ['новый лид', 'новых лида', 'новых лидов'])}`} icon={<IconPercentage size={20} />} color="violet" />
             <StatCard label="В работе" value={moneyShort(s.pipeline)} hint={`${num(s.open_deals)} ${plural(s.open_deals, ['сделка', 'сделки', 'сделок'])}`}
+              onClick={can('deals.view') ? () => navigate(`/deals?view=list&status=open&owner=${ownerId ?? ''}`) : undefined}
               icon={<IconBriefcase size={20} />} color="indigo" />
             <StatCard label="Прогноз (взвешенный)" value={moneyShort(s.forecast)} hint="сумма × вероятность этапа"
               icon={<IconTarget size={20} />} color="cyan" />
@@ -120,6 +123,7 @@ export default function DashboardPage() {
               diff={s.avg_lead_response_minutes && p.avg_lead_response_minutes
                 ? -(diff(s.avg_lead_response_minutes, p.avg_lead_response_minutes) ?? 0) : null} />
             <StatCard label="Просроченные задачи" value={num(s.overdue_tasks)} hint={s.overdue_tasks ? plural(s.overdue_tasks, ['требует внимания', 'требуют внимания', 'требуют внимания']) : 'всё в срок'}
+              onClick={() => navigate(`/tasks?tab=overdue&scope=${can('tasks.view_all') ? 'all' : 'mine'}&assignee=${ownerId ?? ''}`)}
               icon={<IconAlertTriangle size={20} />} color={s.overdue_tasks ? 'red' : 'gray'} />
           </SimpleGrid>
 
@@ -129,7 +133,7 @@ export default function DashboardPage() {
                 <Group justify="space-between" mb="md">
                   <Title order={4}>Выручка по месяцам</Title>
                   <Text size="xs" c="dimmed">
-                    выигранные сделки, ₽
+                    {data!.revenue_by_month.length} мес. по {date(period.to)} · выигранные сделки, ₽
                   </Text>
                 </Group>
                 <BarChart h={280} data={data!.revenue_by_month} dataKey="month"
@@ -192,7 +196,7 @@ export default function DashboardPage() {
                 <Group justify="space-between" mb="md">
                   <Title order={4}>Прогноз закрытия</Title>
                   <Text size="xs" c="dimmed">
-                    по плановым датам, ₽
+                    ближайшие 6 месяцев · по плановым датам, ₽
                   </Text>
                 </Group>
                 <BarChart h={250} data={data!.forecast} dataKey="month"
@@ -274,7 +278,7 @@ export default function DashboardPage() {
             </Grid.Col>
           </Grid>
         </Stack>
-      )}
+      ) : null}
       <TaskModal opened={!!task} onClose={() => setTask(null)} task={task} />
       <CompleteTaskModal task={completing} onClose={() => setCompleting(null)} />
     </div>

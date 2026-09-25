@@ -14,7 +14,6 @@ import {
   SegmentedControl,
   Select,
   SimpleGrid,
-  Skeleton,
   Stack,
   Switch,
   Table,
@@ -30,7 +29,7 @@ import { useApi, useDict, useUsers } from '@/api/hooks';
 import type { Report, ReportColumn } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import PeriodPicker, { Period, periodFromPreset } from '@/components/PeriodPicker';
-import { Empty, PageHeader } from '@/components/ui';
+import { Empty, PageHeader, QueryFeedback } from '@/components/ui';
 import { date, dateTime, money, moneyShort, num, pct } from '@/lib/format';
 
 const REPORTS = [
@@ -192,7 +191,8 @@ export default function ReportsPage() {
     industry_id: industry ?? undefined, region_id: region ?? undefined,
     ...(name === 'custom' ? { metric, group_by: group } : {}),
   };
-  const { data, isLoading } = useApi<Report>(['report', name], `/analytics/reports/${name}`, query);
+  const reportQuery = useApi<Report>(['report', name], `/analytics/reports/${name}`, query);
+  const { data } = reportQuery;
   const reports = REPORTS.filter((r) => !r.perm || can(r.perm));
 
   return (
@@ -250,7 +250,8 @@ export default function ReportsPage() {
                 </Group>
               )}
             </Paper>
-            {isLoading || !data ? <Skeleton h={400} radius="md" /> : (
+            <QueryFeedback query={reportQuery} hasData={!!data} />
+            {data ? (
               <Card>
                 <Title order={4}>{data.title}</Title>
                 <Text size="sm" c="dimmed" mb="md">{data.subtitle}</Text>
@@ -288,7 +289,7 @@ export default function ReportsPage() {
                   </Table.ScrollContainer>
                 )}
               </Card>
-            )}
+            ) : null}
           </Stack>
         </Grid.Col>
       </Grid>
